@@ -27,6 +27,11 @@ jobs:
     - name: Get Dependencies
       run: flutter pub get
 
+    - name: Create Android Platform Files
+      run: |
+        rm -rf android
+        flutter create . --platforms=android --org com.oushudh.reminder
+
     - name: Build Release APK
       run: flutter build apk --release
 
