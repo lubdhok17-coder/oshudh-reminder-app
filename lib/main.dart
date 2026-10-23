@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:home_widget/home_widget.dart';
 
-void main() => runApp(const OshudhReminderApp());
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const OshudhReminderApp());
+}
 
 // ---------------- Bangla Helpers ----------------
 
@@ -34,6 +38,26 @@ String bnTime(DateTime t) {
     period = 'রাত';
   }
   return '$period ${bn(h12)}:${bn(t.minute.toString().padLeft(2, '0'))}';
+}
+
+// ---------------- Widget Sync Helper ----------------
+
+Future<void> updateHomeScreenWidget({
+  required String nextMedName,
+  required String nextMedTime,
+  required String status,
+}) async {
+  try {
+    await HomeWidget.saveWidgetData<String>('next_med_name', nextMedName);
+    await HomeWidget.saveWidgetData<String>('next_med_time', nextMedTime);
+    await HomeWidget.saveWidgetData<String>('med_status', status);
+    await HomeWidget.updateWidget(
+      name: 'OshudhWidgetProvider',
+      androidName: 'OshudhWidgetProvider',
+    );
+  } catch (e) {
+    debugPrint('Widget Update Error: $e');
+  }
 }
 
 // ---------------- Models ----------------
@@ -283,6 +307,8 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
+
+    _syncWidgetData();
   }
 
   @override
@@ -291,8 +317,26 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
     super.dispose();
   }
 
+  void _syncWidgetData() {
+    final pendingMeds = _meds.where((m) => !_takenLogs.containsKey(m.id)).toList();
+    if (pendingMeds.isNotEmpty) {
+      final current = pendingMeds.first;
+      updateHomeScreenWidget(
+        nextMedName: current.name,
+        nextMedTime: current.timeText,
+        status: 'এখন খাওয়ার সময়',
+      );
+    } else {
+      updateHomeScreenWidget(
+        nextMedName: 'সব সম্পন্ন!',
+        nextMedTime: '🎉',
+        status: 'আজকের সব ওষুধ খাওয়া শেষ',
+      );
+    }
+  }
+
   void _toggleTake(int medId) {
-    if (widget.isSupervisor) return; // Supervisor cannot modify
+    if (widget.isSupervisor) return;
 
     setState(() {
       if (_takenLogs.containsKey(medId)) {
@@ -301,6 +345,8 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
         _takenLogs[medId] = DateTime.now();
       }
     });
+
+    _syncWidgetData();
 
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -315,7 +361,6 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
     );
   }
 
-  // ➕ Add Custom Medicine Dialog (Only for Parents)
   void _showAddMedicineDialog() {
     final nameController = TextEditingController();
     final timeController = TextEditingController(text: 'সকাল ৯:০০ টা');
@@ -333,7 +378,7 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
             children: [
               TextField(
                 controller: nameController,
-                decoration: const InputDecoration(labelText: 'ওষুধের নাম (যেমন: Napa এক্সটেন্ড)'),
+                decoration: const InputDecoration(labelText: 'ওষুধের নাম (যেমন: Napa)'),
               ),
               const SizedBox(height: 10),
               TextField(
@@ -389,6 +434,7 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
                     ),
                   );
                 });
+                _syncWidgetData();
                 Navigator.pop(context);
               }
             },
@@ -442,13 +488,12 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.isSupervisor ? '${widget.parentName}-র লাইভ মনিটরিং (ReadOnly)' : 'ওষুধ রিমাইন্ডার (${widget.parentName})',
+          widget.isSupervisor ? '${widget.parentName}-র মনিটরিং (ReadOnly)' : 'ওষুধ রিমাইন্ডার (${widget.parentName})',
           style: GoogleFonts.hindSiliguri(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
         ),
         backgroundColor: const Color(0xFF00796B),
         elevation: 0,
         actions: [
-          // Add button only for Parent
           if (!widget.isSupervisor)
             IconButton(
               icon: const Icon(Icons.add_circle, color: Colors.white, size: 28),
@@ -519,7 +564,6 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
         ),
         const SizedBox(height: 16),
 
-        // Highlight Card
         if (currentMed != null) ...[
           Container(
             padding: const EdgeInsets.all(22),
@@ -569,8 +613,6 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
                   ),
                 ),
                 const SizedBox(height: 20),
-                
-                // 🛑 ONLY SHOW TAKE BUTTON IF NOT SUPERVISOR
                 if (!widget.isSupervisor)
                   SizedBox(
                     width: double.infinity,
