@@ -215,6 +215,8 @@ class _AuthScreenState extends State<AuthScreen> {
                     prefixIcon: Icon(Icons.phonelink_ring),
                   ),
                 ),
+                const SizedBox(height: 8),
+                Text('এই মোডে আপনি শুধু রিমোটলি মনিটর করতে পারবেন, কোনো ওষুধ পরিবর্তন বা টিক দিতে পারবেন না।', style: GoogleFonts.hindSiliguri(fontSize: 13, color: Colors.black54)),
               ],
 
               const SizedBox(height: 32),
@@ -290,6 +292,8 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
   }
 
   void _toggleTake(int medId) {
+    if (widget.isSupervisor) return; // Supervisor cannot modify
+
     setState(() {
       if (_takenLogs.containsKey(medId)) {
         _takenLogs.remove(medId);
@@ -307,6 +311,90 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
         ),
         backgroundColor: const Color(0xFF00796B),
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // ➕ Add Custom Medicine Dialog (Only for Parents)
+  void _showAddMedicineDialog() {
+    final nameController = TextEditingController();
+    final timeController = TextEditingController(text: 'সকাল ৯:০০ টা');
+    final doseController = TextEditingController(text: '১টি ট্যাবলেট');
+    SlotType selectedSlot = SlotType.morning;
+    String selectedTiming = 'খাওয়ার পরে';
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('নতুন ওষুধ যোগ করুন', style: GoogleFonts.hindSiliguri(fontWeight: FontWeight.bold)),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'ওষুধের নাম (যেমন: Napa এক্সটেন্ড)'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: timeController,
+                decoration: const InputDecoration(labelText: 'সময় (যেমন: সকাল ৯:০০ টা)'),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: doseController,
+                decoration: const InputDecoration(labelText: 'মাত্রা (যেমন: ১টি ট্যাবলেট)'),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<SlotType>(
+                value: selectedSlot,
+                items: const [
+                  DropdownMenuItem(value: SlotType.morning, child: Text('সকাল')),
+                  DropdownMenuItem(value: SlotType.noon, child: Text('দুপুর')),
+                  DropdownMenuItem(value: SlotType.night, child: Text('রাত')),
+                ],
+                onChanged: (val) => selectedSlot = val ?? SlotType.morning,
+                decoration: const InputDecoration(labelText: 'সময়ের স্লট'),
+              ),
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                value: selectedTiming,
+                items: const [
+                  DropdownMenuItem(value: 'খাওয়ার পরে', child: Text('খাওয়ার পরে')),
+                  DropdownMenuItem(value: 'খাওয়ার আগে', child: Text('খাওয়ার আগে')),
+                ],
+                onChanged: (val) => selectedTiming = val ?? 'খাওয়ার পরে',
+                decoration: const InputDecoration(labelText: 'খাওয়ার নিয়ম'),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('বাতিল'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (nameController.text.trim().isNotEmpty) {
+                setState(() {
+                  _meds.add(
+                    Medicine(
+                      id: DateTime.now().millisecondsSinceEpoch,
+                      name: nameController.text.trim(),
+                      slot: selectedSlot,
+                      timeText: timeController.text.trim(),
+                      timing: selectedTiming,
+                      dose: doseController.text.trim(),
+                    ),
+                  );
+                });
+                Navigator.pop(context);
+              }
+            },
+            child: const Text('সংরক্ষণ করুন'),
+          ),
+        ],
       ),
     );
   }
@@ -354,12 +442,19 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.isSupervisor ? '${widget.parentName}-র লাইভ মনিটরিং' : 'ওষুধ রিমাইন্ডার (${widget.parentName})',
-          style: GoogleFonts.hindSiliguri(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),
+          widget.isSupervisor ? '${widget.parentName}-র লাইভ মনিটরিং (ReadOnly)' : 'ওষুধ রিমাইন্ডার (${widget.parentName})',
+          style: GoogleFonts.hindSiliguri(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
         ),
         backgroundColor: const Color(0xFF00796B),
         elevation: 0,
         actions: [
+          // Add button only for Parent
+          if (!widget.isSupervisor)
+            IconButton(
+              icon: const Icon(Icons.add_circle, color: Colors.white, size: 28),
+              tooltip: 'ওষুধ যোগ করুন',
+              onPressed: _showAddMedicineDialog,
+            ),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
             onPressed: () {
@@ -375,7 +470,7 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
         destinations: [
           NavigationDestination(
             icon: const Icon(Icons.medication),
-            label: 'আজকের ওষুধ',
+            label: widget.isSupervisor ? 'মনিটরিং ফিড' : 'আজকের ওষুধ',
           ),
           NavigationDestination(
             icon: const Icon(Icons.analytics),
@@ -396,21 +491,27 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.teal.shade50,
+            color: widget.isSupervisor ? Colors.amber.shade50 : Colors.teal.shade50,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.teal.shade200),
+            border: Border.all(color: widget.isSupervisor ? Colors.amber.shade300 : Colors.teal.shade200),
           ),
           child: Row(
             children: [
-              ScaleTransition(
-                scale: Tween(begin: 0.8, end: 1.2).animate(_animationController),
-                child: const Icon(Icons.sensors, color: Color(0xFF00796B)),
+              Icon(
+                widget.isSupervisor ? Icons.visibility : Icons.sensors,
+                color: widget.isSupervisor ? Colors.amber.shade800 : const Color(0xFF00796B),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  'লাইভ সিঙ্ক চালু আছে (কোড: ${widget.pairCode})',
-                  style: GoogleFonts.hindSiliguri(fontSize: 14, fontWeight: FontWeight.bold, color: const Color(0xFF004D40)),
+                  widget.isSupervisor
+                      ? 'মনিটরিং মোড: আপনি শুধু দেখতে পাচ্ছেন (কোড: ${widget.pairCode})'
+                      : 'লাইভ সিঙ্ক চালু আছে (কোড: ${widget.pairCode})',
+                  style: GoogleFonts.hindSiliguri(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: widget.isSupervisor ? Colors.amber.shade900 : const Color(0xFF004D40),
+                  ),
                 ),
               ),
             ],
@@ -418,6 +519,7 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
         ),
         const SizedBox(height: 16),
 
+        // Highlight Card
         if (currentMed != null) ...[
           Container(
             padding: const EdgeInsets.all(22),
@@ -438,7 +540,7 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'এখন খাওয়ার সময় (${currentMed.timeText})',
+                      widget.isSupervisor ? 'পরবর্তী খাওয়ার সময় (${currentMed.timeText})' : 'এখন খাওয়ার সময় (${currentMed.timeText})',
                       style: GoogleFonts.hindSiliguri(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -467,23 +569,39 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
                   ),
                 ),
                 const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton.icon(
-                    onPressed: () => _toggleTake(currentMed.id),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: currentMed.slot == SlotType.night ? Colors.amberAccent : const Color(0xFF00796B),
-                      foregroundColor: currentMed.slot == SlotType.night ? Colors.black : Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                
+                // 🛑 ONLY SHOW TAKE BUTTON IF NOT SUPERVISOR
+                if (!widget.isSupervisor)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 56,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _toggleTake(currentMed.id),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: currentMed.slot == SlotType.night ? Colors.amberAccent : const Color(0xFF00796B),
+                        foregroundColor: currentMed.slot == SlotType.night ? Colors.black : Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                      icon: const Icon(Icons.check_circle, size: 30),
+                      label: Text(
+                        'খেয়েছেন?',
+                        style: GoogleFonts.hindSiliguri(fontSize: 22, fontWeight: FontWeight.bold),
+                      ),
                     ),
-                    icon: const Icon(Icons.check_circle, size: 30),
-                    label: Text(
-                      'খেয়েছেন?',
-                      style: GoogleFonts.hindSiliguri(fontSize: 22, fontWeight: FontWeight.bold),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.black12,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      'তত্ত্বাবধায়ক হিসেবে আপনি এখানে টিক দিতে পারবেন না।',
+                      style: GoogleFonts.hindSiliguri(fontSize: 13, color: Colors.white70),
+                      textAlign: TextAlign.center,
                     ),
                   ),
-                ),
               ],
             ),
           )
@@ -508,7 +626,18 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
         ],
 
         const SizedBox(height: 24),
-        Text('আজকের ওষুধের তালিকা:', style: GoogleFonts.hindSiliguri(fontSize: 22, fontWeight: FontWeight.bold)),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('ওষুধের তালিকা:', style: GoogleFonts.hindSiliguri(fontSize: 20, fontWeight: FontWeight.bold)),
+            if (!widget.isSupervisor)
+              TextButton.icon(
+                onPressed: _showAddMedicineDialog,
+                icon: const Icon(Icons.add),
+                label: Text('নতুন যোগ করুন', style: GoogleFonts.hindSiliguri(fontWeight: FontWeight.bold)),
+              ),
+          ],
+        ),
         const SizedBox(height: 10),
 
         for (final m in _meds) ...[
@@ -522,33 +651,35 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
               title: Text(
                 m.name,
                 style: GoogleFonts.hindSiliguri(
-                  fontSize: 20,
+                  fontSize: 18,
                   fontWeight: FontWeight.bold,
                   decoration: _takenLogs.containsKey(m.id) ? TextDecoration.lineThrough : null,
                   color: _takenLogs.containsKey(m.id) ? Colors.grey : Colors.black,
                 ),
               ),
               subtitle: Text(
-                '${m.timeText} • ${m.timing}',
-                style: GoogleFonts.hindSiliguri(fontSize: 15),
+                '${m.timeText} • ${m.timing} • ${m.dose}',
+                style: GoogleFonts.hindSiliguri(fontSize: 14),
               ),
               trailing: _takenLogs.containsKey(m.id)
                   ? Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text('খেয়েছেন ✓', style: GoogleFonts.hindSiliguri(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 16)),
-                        Text(bnTime(_takenLogs[m.id]!), style: GoogleFonts.hindSiliguri(fontSize: 12, color: Colors.black54)),
+                        Text('খেয়েছেন ✓', style: GoogleFonts.hindSiliguri(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 14)),
+                        Text(bnTime(_takenLogs[m.id]!), style: GoogleFonts.hindSiliguri(fontSize: 11, color: Colors.black54)),
                       ],
                     )
-                  : ElevatedButton(
-                      onPressed: () => _toggleTake(m.id),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF00796B),
-                        foregroundColor: Colors.white,
-                      ),
-                      child: Text('খেয়েছেন?', style: GoogleFonts.hindSiliguri(fontWeight: FontWeight.bold)),
-                    ),
+                  : widget.isSupervisor
+                      ? Text('pending', style: GoogleFonts.hindSiliguri(color: Colors.orange, fontWeight: FontWeight.bold))
+                      : ElevatedButton(
+                          onPressed: () => _toggleTake(m.id),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF00796B),
+                            foregroundColor: Colors.white,
+                          ),
+                          child: Text('খেয়েছেন?', style: GoogleFonts.hindSiliguri(fontWeight: FontWeight.bold)),
+                        ),
             ),
           )
         ]
@@ -566,7 +697,7 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
       children: [
         Text('হেলথ ও ওষুধ গ্রহণের অ্যানালিটিক্স', style: GoogleFonts.hindSiliguri(fontSize: 22, fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
-        Text('আজকের বিস্তারিত প্রতিবেদন ও সাপ্তাহিক হিস্ট্রি', style: GoogleFonts.hindSiliguri(fontSize: 14, color: Colors.black54)),
+        Text(widget.isSupervisor ? '(${widget.parentName}-র লাইভ স্বাস্থ্য প্রতিবেদন)' : 'আজকের বিস্তারিত প্রতিবেদন', style: GoogleFonts.hindSiliguri(fontSize: 14, color: Colors.black54)),
         const SizedBox(height: 16),
 
         Card(
@@ -654,7 +785,7 @@ class _MainDashboardState extends State<MainDashboard> with SingleTickerProvider
         ),
 
         const SizedBox(height: 24),
-        Text('বিস্তারিত সময়সূচী ও রিয়েল-টাইম লগ', style: GoogleFonts.hindSiliguri(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text('রিয়েল-টাইম লগ ফিড', style: GoogleFonts.hindSiliguri(fontSize: 18, fontWeight: FontWeight.bold)),
         const SizedBox(height: 10),
 
         for (final m in _meds) ...[
